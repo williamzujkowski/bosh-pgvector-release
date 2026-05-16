@@ -1,30 +1,55 @@
-#!/bin/bash -exu
+#!/bin/bash
+# Compile pgvector against the bundled postgres-17.
 # See packages/pgvector-15/packaging for the full design notes.
-# This is the postgres-17 variant.
+
+set -euxo pipefail
 
 POSTGRES_VERSION=17
 PG_CONFIG="/var/vcap/packages/postgres-${POSTGRES_VERSION}/bin/pg_config"
 
-function main() {
+main() {
   extract_archive
   compile
+  record_manifest
 }
 
-function extract_archive() {
+extract_archive() {
   echo "Extracting pgvector source..."
-  tar xzf pgvector/pgvector-*.tar.gz
+  shopt -s nullglob
+  local matches=(pgvector/pgvector-*.tar.gz)
+  if [[ ${#matches[@]} -eq 0 ]]; then
+    echo "ERROR: no pgvector source tarball found in pgvector/" >&2
+    return 1
+  fi
+  if [[ ${#matches[@]} -gt 1 ]]; then
+    echo "ERROR: multiple pgvector tarballs in pgvector/:" >&2
+    printf '  %s\n' "${matches[@]}" >&2
+    echo "Remove old blob(s) before building." >&2
+    return 1
+  fi
+  tar xzf "${matches[0]}"
 }
 
-function compile() {
-  pushd pgvector-* >/dev/null
+compile() {
+  shopt -s nullglob
+  local src_dirs=(pgvector-*/)
+  if [[ ${#src_dirs[@]} -ne 1 ]]; then
+    echo "ERROR: expected exactly one extracted pgvector source dir; got ${#src_dirs[@]}" >&2
+    return 1
+  fi
+
+  pushd "${src_dirs[0]}" >/dev/null
   make -j"$(nproc)" PG_CONFIG="${PG_CONFIG}" OPTFLAGS=""
   make install PG_CONFIG="${PG_CONFIG}"
   popd >/dev/null
+}
 
+record_manifest() {
   mkdir -p "${BOSH_INSTALL_TARGET}"
   cat >"${BOSH_INSTALL_TARGET}/pgvector.env" <<EOF
 PGVECTOR_INSTALLED_FOR_POSTGRES=${POSTGRES_VERSION}
 PGVECTOR_INSTALL_TARGET=/var/vcap/packages/postgres-${POSTGRES_VERSION}
+PGVECTOR_PG_CONFIG=${PG_CONFIG}
 EOF
 }
 
