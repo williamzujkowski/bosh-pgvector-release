@@ -1,0 +1,31 @@
+#!/bin/bash -exu
+# See packages/pgvector-15/packaging for the full design notes.
+# This is the postgres-16 variant.
+
+POSTGRES_VERSION=16
+PG_CONFIG="/var/vcap/packages/postgres-${POSTGRES_VERSION}/bin/pg_config"
+
+function main() {
+  extract_archive
+  compile
+}
+
+function extract_archive() {
+  echo "Extracting pgvector source..."
+  tar xzf pgvector/pgvector-*.tar.gz
+}
+
+function compile() {
+  pushd pgvector-* >/dev/null
+  make -j"$(nproc)" PG_CONFIG="${PG_CONFIG}" OPTFLAGS=""
+  make install PG_CONFIG="${PG_CONFIG}"
+  popd >/dev/null
+
+  mkdir -p "${BOSH_INSTALL_TARGET}"
+  cat >"${BOSH_INSTALL_TARGET}/pgvector.env" <<EOF
+PGVECTOR_INSTALLED_FOR_POSTGRES=${POSTGRES_VERSION}
+PGVECTOR_INSTALL_TARGET=/var/vcap/packages/postgres-${POSTGRES_VERSION}
+EOF
+}
+
+main

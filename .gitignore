@@ -25,3 +25,10 @@
 /src/acceptance-tests/pkg
 /tags
 pgats_config.yml
+
+# Local secret-scan baseline (created on `detect-secrets scan > .secrets.baseline`)
+# Tracked when present, but ignore mistakes.
+*.secrets-tmp
+
+# Local dev release tarballs from `bosh create-release --tarball=...`
+*.tgz

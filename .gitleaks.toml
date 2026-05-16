@@ -1,0 +1,21 @@
+# gitleaks configuration.
+# Extends the default gitleaks rules. The allowlist below covers
+# false positives we've reviewed and confirmed safe.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Reviewed false positives"
+paths = [
+  # Upstream blob hashes are not secrets; not in scope for our lint.
+  '''^releases/postgres/.*\.yml$''',
+  # detect-secrets baseline file is exactly what it says it is.
+  '''^\.secrets\.baseline$''',
+  # Upstream acceptance-test fixtures use the literal word "password".
+  '''^src/acceptance-tests/''',
+]
+regexes = [
+  # actions/cache cache-key strings look high-entropy but are descriptive.
+  '''blobs-pg\d+\.\d+-pg\d+\.\d+-pg\d+\.\d+-pgvector\d+\.\d+\.\d+-yq\d+\.\d+\.\d+''',
+]

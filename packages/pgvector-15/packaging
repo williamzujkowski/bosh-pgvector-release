@@ -1,0 +1,43 @@
+#!/bin/bash -exu
+#
+# Compile pgvector against the bundled postgres-15.
+#
+# pgvector is a small, self-contained PG extension. Its Makefile uses
+# PGXS, so all we have to do is point PG_CONFIG at the postgres-15
+# binary shipped by the postgres-15 package and `make install` writes
+# the .so + control file + SQL into that package's lib/share dirs.
+#
+# Per-Postgres-major-version package mirrors how postgres-release
+# ships postgres-15 / postgres-16 / postgres-17 as separate packages.
+
+POSTGRES_VERSION=15
+PG_CONFIG="/var/vcap/packages/postgres-${POSTGRES_VERSION}/bin/pg_config"
+
+function main() {
+  extract_archive
+  compile
+}
+
+function extract_archive() {
+  echo "Extracting pgvector source..."
+  tar xzf pgvector/pgvector-*.tar.gz
+}
+
+function compile() {
+  pushd pgvector-* >/dev/null
+  # PG_CONFIG must point at the same postgres binary the job will run
+  # against. OPTFLAGS="" prevents the SIGILL-on-old-CPU issue from
+  # pgvector's default -march=native.
+  make -j"$(nproc)" PG_CONFIG="${PG_CONFIG}" OPTFLAGS=""
+  make install PG_CONFIG="${PG_CONFIG}"
+  popd >/dev/null
+
+  # Mark the install so the post-start hook can verify it.
+  mkdir -p "${BOSH_INSTALL_TARGET}"
+  cat >"${BOSH_INSTALL_TARGET}/pgvector.env" <<EOF
+PGVECTOR_INSTALLED_FOR_POSTGRES=${POSTGRES_VERSION}
+PGVECTOR_INSTALL_TARGET=/var/vcap/packages/postgres-${POSTGRES_VERSION}
+EOF
+}
+
+main

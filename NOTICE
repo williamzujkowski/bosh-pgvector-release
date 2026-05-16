@@ -1,3 +1,45 @@
+bosh-pgvector-release
+Copyright 2026 William Zujkowski and contributors
+
+This product includes software developed at Cloud Foundry
+(https://www.cloudfoundry.org/) and is licensed under the Apache
+License, Version 2.0.
+
+============================================================================
+Derivative work attribution
+============================================================================
+
+This release is a fork of cloudfoundry/postgres-release:
+  https://github.com/cloudfoundry/postgres-release
+  Copyright (c) CloudFoundry.org Foundation, Inc. 2016. All Rights Reserved.
+  License: Apache License 2.0
+  Last rebased: 2026-05-16 from upstream commit 0998b4e (v54.0.1).
+
+Changes from upstream are listed in README.md ("What's added vs upstream")
+and in the git log (commits ahead of upstream/master).
+
+============================================================================
+Third-party software included
+============================================================================
+
+PostgreSQL — The PostgreSQL Database Management System
+  https://www.postgresql.org/
+  License: PostgreSQL License (BSD-style)
+  Versions 15.x, 16.x, 17.x bundled per packages/postgres-{15,16,17}.
+
+pgvector — Open-source vector similarity search for Postgres
+  https://github.com/pgvector/pgvector
+  License: PostgreSQL License (BSD-style)
+  Author: Andrew Kane and contributors
+
+yq — Command-line YAML processor
+  https://github.com/mikefarah/yq
+  License: MIT
+
+============================================================================
+Upstream NOTICE (preserved verbatim)
+============================================================================
+
 postgres-release
 
 Copyright (c) CloudFoundry.org Foundation, Inc. 2016. All Rights Reserved.

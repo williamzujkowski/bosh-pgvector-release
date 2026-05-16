@@ -32,6 +32,10 @@ packages:
   - postgres-16
   - postgres-17
   - postgres-yq-4
+  # pgvector (added by bosh-pgvector-release, not upstream postgres-release)
+  - pgvector-15
+  - pgvector-16
+  - pgvector-17
 
 provides:
 - name: postgres

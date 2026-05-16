@@ -1,0 +1,106 @@
+---
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-release:
+    name: bosh create-release smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install bosh CLI
+        run: |
+          mkdir -p "${HOME}/.local/bin"
+          curl -fsSL -o "${HOME}/.local/bin/bosh" \
+            https://github.com/cloudfoundry/bosh-cli/releases/download/v7.10.5/bosh-cli-7.10.5-linux-amd64
+          chmod +x "${HOME}/.local/bin/bosh"
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
+      - name: Cache source blobs
+        uses: actions/cache@v4
+        with:
+          path: blobs/
+          key: blobs-pg15.18-pg16.14-pg17.10-pgvector0.8.0-yq4.53.2
+
+      - name: Fetch source blobs (if not cached)
+        run: ./scripts/fetch-blobs.sh
+
+      - name: Register pgvector blob with bosh
+        run: |
+          if ! grep -q "^pgvector/pgvector-0.8.0.tar.gz:" config/blobs.yml; then
+            bosh add-blob blobs/pgvector/pgvector-0.8.0.tar.gz pgvector/pgvector-0.8.0.tar.gz
+          fi
+
+      - name: bosh create-release --force
+        run: |
+          bosh create-release --force \
+            --name=bosh-pgvector-release \
+            --version=0.0.0-ci-${{ github.run_id }} \
+            --tarball=/tmp/bosh-pgvector-release-ci.tgz
+
+      - name: Verify release contents
+        run: |
+          tar -tzf /tmp/bosh-pgvector-release-ci.tgz | sort > /tmp/contents.txt
+          for expected in \
+            packages/pgvector-15.tgz \
+            packages/pgvector-16.tgz \
+            packages/pgvector-17.tgz \
+            packages/postgres-15.tgz \
+            packages/postgres-16.tgz \
+            packages/postgres-17.tgz \
+            jobs/postgres.tgz \
+            release.MF
+          do
+            if ! grep -qx "${expected}" /tmp/contents.txt; then
+              echo "ERROR: tarball missing ${expected}"
+              exit 1
+            fi
+          done
+          echo "OK — tarball contains all required entries"
+
+      - name: Upload release artifact (for inspection)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bosh-pgvector-release-ci-${{ github.run_id }}.tgz
+          path: /tmp/bosh-pgvector-release-ci.tgz
+          retention-days: 7
+
+  pre-commit:
+    name: pre-commit (linters + security)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pre-commit + pyyaml
+        run: pip install pre-commit pyyaml
+      - name: Run pre-commit
+        run: pre-commit run --all-files --show-diff-on-failure
+
+  secrets-scan:
+    name: gitleaks (full history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
