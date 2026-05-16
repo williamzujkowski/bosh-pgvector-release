@@ -1,0 +1,212 @@
+---
+name: release
+
+# Triggered by pushing an annotated tag like `v0.1.0`. Builds a release
+# tarball at the tag's version, generates SHA256SUMS, and attaches both
+# to a GitHub Release that downstream deployments (e.g., homelab-iac
+# Concourse pipelines) can consume.
+#
+# Uses `bosh create-release --force` rather than `--final` because we
+# don't yet operate our own blobstore (config/final.yml still points to
+# upstream's S3 bucket). The resulting tarball is functionally identical
+# for `bosh upload-release` consumers; what we lose is the .final_builds
+# reproducibility tracking. Revisit if/when we set up our own blobstore
+# (see AGENTS.md, "Layout" section).
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'   # pre-release suffixes like v0.1.0-rc.1
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (without leading v). Used for dry-run testing without creating a GitHub Release.'
+        required: true
+        default: '0.0.0-dryrun'
+
+# Default deny-write; only the publishing job opts into contents:write.
+permissions:
+  contents: read
+
+# Serialize concurrent tag pushes so two simultaneous releases can't race.
+# cancel-in-progress: false because we'd rather both runs complete in order
+# than lose the earlier one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  BOSH_CLI_VERSION: '7.10.5'
+  # SHA-256 of bosh-cli-7.10.5-linux-amd64 from the official release asset.
+  # Update in lockstep with BOSH_CLI_VERSION; verify against the GitHub
+  # release page checksums before bumping.
+  BOSH_CLI_SHA256: 'e9847375ba5397589e7b070305defc70321ad0e62d18b67a70a330efcab6e526'  # pragma: allowlist secret
+
+jobs:
+  build-and-publish:
+    name: Build and publish release tarball
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write   # required by gh release create
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+          # Don't leave GITHUB_TOKEN in .git/config for the job's lifetime;
+          # we never push from this workflow.
+          persist-credentials: false
+
+      # Read user-controlled input via env, never via ${{ }} interpolation
+      # into a shell script (GHA substitutes before bash runs, which would
+      # let a workflow_dispatch caller break out before the regex below
+      # could reject it). The strict semver regex below rejects leading
+      # zeros and `+build` metadata — BOSH versions don't tolerate `+`,
+      # so disallowing it here gives one consistent rule.
+      - name: Derive version from tag or input
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            VERSION="${INPUT_VERSION}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          if ! [[ "${VERSION}" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[A-Za-z0-9.-]+)?$ ]]; then
+            echo "ERROR: version '${VERSION}' is not strict semver (no leading zeros, no +build; BOSH-compatible)"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "tarball=bosh-pgvector-release-${VERSION}.tgz" >> "${GITHUB_OUTPUT}"
+
+      - name: Install bosh CLI
+        run: |
+          mkdir -p "${HOME}/.local/bin"
+          curl -fsSL -o "${HOME}/.local/bin/bosh" \
+            "https://github.com/cloudfoundry/bosh-cli/releases/download/v${BOSH_CLI_VERSION}/bosh-cli-${BOSH_CLI_VERSION}-linux-amd64"
+          echo "${BOSH_CLI_SHA256}  ${HOME}/.local/bin/bosh" | sha256sum -c -
+          chmod +x "${HOME}/.local/bin/bosh"
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
+      # Cache key derived from the script + blob manifest so a version
+      # bump in fetch-blobs.sh automatically invalidates the cache.
+      # Note: cache poisoning across branches is mitigated by fetch-blobs.sh
+      # SHA-verifying every file on every run (including cache hits, since
+      # the verification runs on file presence not on download).
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809  # v4.2.4
+        with:
+          path: blobs/
+          key: blobs-${{ hashFiles('scripts/fetch-blobs.sh', 'config/blobs.yml') }}
+
+      - name: Fetch source blobs (if not cached)
+        run: ./scripts/fetch-blobs.sh
+
+      - name: Register pgvector blob with bosh
+        run: |
+          if ! grep -q "^pgvector/pgvector-0.8.0.tar.gz:" config/blobs.yml; then
+            bosh add-blob blobs/pgvector/pgvector-0.8.0.tar.gz pgvector/pgvector-0.8.0.tar.gz
+          fi
+
+      - name: bosh create-release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TARBALL: ${{ steps.version.outputs.tarball }}
+        run: |
+          bosh create-release --force \
+            --name=bosh-pgvector-release \
+            --version="${VERSION}" \
+            --tarball="/tmp/${TARBALL}"
+
+      - name: Verify release contents
+        env:
+          TARBALL: ${{ steps.version.outputs.tarball }}
+        run: |
+          tar -tzf "/tmp/${TARBALL}" | sort > /tmp/contents.txt
+          for expected in \
+            packages/pgvector-15.tgz \
+            packages/pgvector-16.tgz \
+            packages/pgvector-17.tgz \
+            packages/postgres-15.tgz \
+            packages/postgres-16.tgz \
+            packages/postgres-17.tgz \
+            jobs/postgres.tgz \
+            release.MF
+          do
+            if ! grep -qx "${expected}" /tmp/contents.txt; then
+              echo "ERROR: tarball missing ${expected}"
+              exit 1
+            fi
+          done
+          echo "OK — tarball contains all required entries"
+
+      - name: Generate SHA256SUMS
+        working-directory: /tmp
+        env:
+          TARBALL: ${{ steps.version.outputs.tarball }}
+        run: |
+          sha256sum "${TARBALL}" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload artifact (workflow_dispatch dry-runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: bosh-pgvector-release-${{ steps.version.outputs.version }}
+          path: |
+            /tmp/${{ steps.version.outputs.tarball }}
+            /tmp/SHA256SUMS
+          retention-days: 14
+
+      # Idempotent: if a tag is force-pushed and the release already
+      # exists, clobber its assets and refresh the notes rather than
+      # erroring out. Notes are written to a real file (process
+      # substitution with `gh --notes-file <(...)` has regressed before).
+      - name: Create or update GitHub Release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TARBALL: ${{ steps.version.outputs.tarball }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          cat > /tmp/notes.md <<EOF
+          BOSH release tarball for bosh-pgvector-release ${VERSION}.
+
+          ## Install
+
+          \`\`\`bash
+          curl -fsSLO https://github.com/${REPO}/releases/download/${TAG}/${TARBALL}
+          curl -fsSLO https://github.com/${REPO}/releases/download/${TAG}/SHA256SUMS
+          sha256sum -c SHA256SUMS
+          bosh upload-release ${TARBALL}
+          \`\`\`
+
+          ## Contents
+
+          - postgres-{15,16,17} (compiled from postgresql.org sources)
+          - pgvector-{15,16,17} (compiled against each postgres major)
+          - postgres + bbr-postgres-db jobs (unchanged from upstream)
+
+          See [docs/deployment.md](https://github.com/${REPO}/blob/${TAG}/docs/deployment.md) for deployment instructions.
+          EOF
+
+          PRERELEASE_FLAG=""
+          if [[ "${VERSION}" == *-* ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists; clobbering assets and refreshing notes"
+            gh release upload "${TAG}" --clobber \
+              "/tmp/${TARBALL}" "/tmp/SHA256SUMS"
+            gh release edit "${TAG}" --notes-file /tmp/notes.md
+          else
+            gh release create "${TAG}" \
+              --title "${TAG}" \
+              --notes-file /tmp/notes.md \
+              ${PRERELEASE_FLAG} \
+              "/tmp/${TARBALL}" "/tmp/SHA256SUMS"
+          fi
