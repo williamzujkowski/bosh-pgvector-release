@@ -1,0 +1,8 @@
+---
+name: pgvector-15
+
+dependencies:
+  - postgres-15
+
+files:
+  - pgvector/pgvector-*.tar.gz

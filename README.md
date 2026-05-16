@@ -1,5 +1,116 @@
-# postgres-release
+# bosh-pgvector-release
+
+> **A BOSH release for PostgreSQL with the [pgvector](https://github.com/pgvector/pgvector) extension.**
+> Fork of [`cloudfoundry/postgres-release`](https://github.com/cloudfoundry/postgres-release) (Apache 2.0). Adds three packages — `pgvector-15`, `pgvector-16`, `pgvector-17` — that compile pgvector against the bundled PostgreSQL major versions and install it as a co-located package, so any database provisioned by the `postgres` job can `CREATE EXTENSION vector` without extra operator steps on the VM.
+
+## Why this fork exists
+
+Upstream `postgres-release` ships a clean PostgreSQL build for use under Cloud Foundry components (Cloud Controller, UAA), and it doesn't include pgvector. Vanilla `postgres:N` Docker images don't either. Any CF team building a RAG, embeddings, semantic search, or recommendations app on BOSH-deployed Postgres hits the same wall: pgvector isn't available, and the standard role created at bind time can't `CREATE EXTENSION` without it pre-installed on the VM.
+
+This release closes that gap. It's intended as a community pattern other CF/BOSH operators can pick up directly or fork further.
+
+**Non-goals:**
+
+- We do not modify any upstream postgres-release behavior. The `shared` postgres binding still works exactly the same.
+- We do not bundle a service broker. Use the broker your foundation already runs; this release just makes pgvector available at the OS level on the postgres VM.
+
+## What's added vs upstream
+
+| Change                                                  | Where                                  |
+| ------------------------------------------------------- | -------------------------------------- |
+| `pgvector-15` package — compiles pgvector for Postgres 15 | `packages/pgvector-15/`                |
+| `pgvector-16` package — compiles pgvector for Postgres 16 | `packages/pgvector-16/`                |
+| `pgvector-17` package — compiles pgvector for Postgres 17 | `packages/pgvector-17/`                |
+| Three packages added to the `postgres` job's package list | `jobs/postgres/spec`                   |
+| pgvector source blob registered in the blobstore         | `config/blobs.yml` + `blobs/pgvector/` |
+| Fork-specific docs and ADRs                              | This README, `docs/adr/`, `NOTICE`     |
+
+That's it. The diff against upstream is intentionally small.
+
+## Enabling the extension on each database
+
+`pgvector` is now compiled into the postgres VM, but it still needs `CREATE EXTENSION vector` run against each database that wants it. Use the existing `databases.hooks.post_start` property to do this declaratively per deployment:
+
+```yaml
+# In your BOSH deployment manifest, under the postgres job:
+properties:
+  databases:
+    version: 16
+    databases:
+      - name: kiln_chunks
+      - name: another_app_db
+    hooks:
+      post_start: |
+        export PATH=/var/vcap/packages/postgres-16/bin:$PATH
+        for db in kiln_chunks another_app_db; do
+          psql -h 127.0.0.1 -p ${PORT} -d "${db}" \
+            -c "CREATE EXTENSION IF NOT EXISTS vector"
+        done
+```
+
+The hook runs after PostgreSQL has started. `PORT` is set by the call-hooks wrapper. If the package isn't installed against the right Postgres major, the SQL fails loudly — no silent extension-version mismatches.
+
+## Quick start (build a dev release locally)
+
+```bash
+# Prereqs: bosh CLI v7.x, ~95 MB of network bandwidth for source blobs.
+git clone https://github.com/williamzujkowski/bosh-pgvector-release
+cd bosh-pgvector-release
+
+# Fetch source blobs (Postgres 15/16/17 from postgresql.org, pgvector from GitHub).
+./scripts/fetch-blobs.sh
+
+# Build a development tarball.
+bosh create-release --force --name=bosh-pgvector-release --version=0.1.0-dev \
+  --tarball=/tmp/bosh-pgvector-release-0.1.0-dev.tgz
+
+# Upload to your director.
+bosh upload-release /tmp/bosh-pgvector-release-0.1.0-dev.tgz
+```
+
+For deployment instructions, see the [upstream README](#upstream-postgres-release-readme) further down (it applies unchanged) plus [`docs/deployment.md`](./docs/deployment.md) for the pgvector-specific bits.
+
+## Versioning
+
+| pgvector | postgres-15 | postgres-16 | postgres-17 | postgres-release base |
+| -------- | ----------- | ----------- | ----------- | --------------------- |
+| 0.8.0    | 15.18       | 16.14       | 17.10       | v54.0.1 (rebased: 0998b4e on 2026-05-16) |
+
+We track upstream postgres-release closely (one rebase per upstream release) and pin to whichever pgvector version is current at rebase time. See [`docs/adr/0001-fork-and-rebase-policy.md`](./docs/adr/0001-fork-and-rebase-policy.md) for the policy.
+
+## Known consumers
+
+- [cf-knowledge-kiln](https://github.com/williamzujkowski/cf-knowledge-kiln) — prospective consumer (will pick this up if its Phase 5.5 decision adds embeddings).
+
+If you deploy this, [open an issue](https://github.com/williamzujkowski/bosh-pgvector-release/issues/new) so we can list you here — useful for everyone tracking the pattern's adoption.
+
+## License
+
+Apache License 2.0. Same as upstream `cloudfoundry/postgres-release`. See [`LICENSE`](./LICENSE) and [`NOTICE`](./NOTICE).
+
+## Security
+
+See [`SECURITY.md`](./SECURITY.md).
+
+## Contributing
+
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
+## AI coding agents
+
+See [`AGENTS.md`](./AGENTS.md) before making changes.
+
 ---
+
+# Upstream `postgres-release` README
+
+Everything below this line is the upstream README, preserved verbatim
+because the upstream deployment instructions still apply. The fork's
+additions are above this line.
+
+---
+
+## postgres-release
 
 This is a [BOSH](https://www.bosh.io) release for [PostgreSQL](https://www.postgresql.org/).
 

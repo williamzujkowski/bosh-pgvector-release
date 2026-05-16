@@ -1,0 +1,75 @@
+#!/bin/bash
+# Compile pgvector against the bundled postgres-15.
+#
+# pgvector uses PGXS, so PG_CONFIG fully determines install location.
+# We point it at the postgres-15 package's pg_config; `make install`
+# writes the .so + control file + SQL into that package's lib/share.
+#
+# Per-Postgres-major package mirrors how upstream postgres-release
+# ships postgres-15/16/17 as separate packages. See ADR-0002.
+#
+# Hardening per code-review #19: -o pipefail + assert exactly one
+# matching tarball before pushd (a version bump that leaves the old
+# blob on disk would otherwise pick non-deterministically).
+
+set -euxo pipefail
+
+POSTGRES_VERSION=15
+PG_CONFIG="/var/vcap/packages/postgres-${POSTGRES_VERSION}/bin/pg_config"
+
+main() {
+  extract_archive
+  compile
+  record_manifest
+}
+
+extract_archive() {
+  echo "Extracting pgvector source..."
+  # Assert exactly one tarball; refuse to guess if a version bump left
+  # two on disk.
+  shopt -s nullglob
+  local matches=(pgvector/pgvector-*.tar.gz)
+  if [[ ${#matches[@]} -eq 0 ]]; then
+    echo "ERROR: no pgvector source tarball found in pgvector/" >&2
+    return 1
+  fi
+  if [[ ${#matches[@]} -gt 1 ]]; then
+    echo "ERROR: multiple pgvector tarballs in pgvector/:" >&2
+    printf '  %s\n' "${matches[@]}" >&2
+    echo "Remove old blob(s) before building." >&2
+    return 1
+  fi
+  tar xzf "${matches[0]}"
+}
+
+compile() {
+  # Find the extracted source dir; same one-match assertion.
+  shopt -s nullglob
+  local src_dirs=(pgvector-*/)
+  if [[ ${#src_dirs[@]} -ne 1 ]]; then
+    echo "ERROR: expected exactly one extracted pgvector source dir; got ${#src_dirs[@]}" >&2
+    return 1
+  fi
+
+  pushd "${src_dirs[0]}" >/dev/null
+  # OPTFLAGS="" overrides pgvector's default -march=native; the
+  # compilation VM may not be CPU-feature-identical to the deployment
+  # VM, and -march=native produces .so files that crash with SIGILL
+  # on a different microarchitecture.
+  make -j"$(nproc)" PG_CONFIG="${PG_CONFIG}" OPTFLAGS=""
+  make install PG_CONFIG="${PG_CONFIG}"
+  popd >/dev/null
+}
+
+record_manifest() {
+  # Tracks what we built for which Postgres major. Read by the
+  # post-start verification hook (added in a follow-up).
+  mkdir -p "${BOSH_INSTALL_TARGET}"
+  cat >"${BOSH_INSTALL_TARGET}/pgvector.env" <<EOF
+PGVECTOR_INSTALLED_FOR_POSTGRES=${POSTGRES_VERSION}
+PGVECTOR_INSTALL_TARGET=/var/vcap/packages/postgres-${POSTGRES_VERSION}
+PGVECTOR_PG_CONFIG=${PG_CONFIG}
+EOF
+}
+
+main

@@ -1,0 +1,34 @@
+---
+extends: default
+
+rules:
+  line-length:
+    max: 200
+    level: warning
+  document-start:
+    present: true
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  indentation:
+    spaces: 2
+    indent-sequences: true
+  braces:
+    max-spaces-inside: 1
+  brackets:
+    max-spaces-inside: 1
+
+ignore: |
+  blobs/
+  .blobs/
+  .dev_builds/
+  dev_releases/
+  src/acceptance-tests/vendor/
+  # Upstream files — out of scope for our lint (per ADR-0001).
+  # Issues belong upstream at cloudfoundry/postgres-release.
+  releases/
+  .final_builds/
+  ci/templates/
+  manifest-generation/

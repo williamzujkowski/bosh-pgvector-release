@@ -1,0 +1,103 @@
+# bosh-pgvector-release pre-commit configuration.
+# Install: pip install pre-commit && pre-commit install
+# Run all: pre-commit run --all-files
+# Skip:    SKIP=gitleaks git commit ...
+#
+# Versions pinned. Reviewed at each upstream rebase.
+
+repos:
+  # ─── Secrets ────────────────────────────────────────────────────────
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.2
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+        # Scan only our additions. Upstream files contain blob SHA-256
+        # hashes (false positives) and test fixtures with the literal
+        # word "password" (test code). Out of scope for our lint.
+        files: ^(packages/pgvector-(15|16|17)/|docs/adr/|docs/deployment\.md$|AGENTS\.md$|CLAUDE\.md$|README\.md$|NOTICE$|SECURITY\.md$|CONTRIBUTING\.md$|CHANGELOG\.md$|\.pre-commit-config\.yaml$|\.markdownlint\.json$|\.yamllint\.yml$|\.gitignore$|\.github/workflows/ci\.yml$|\.github/ISSUE_TEMPLATE/|\.github/PULL_REQUEST_TEMPLATE\.md$|scripts/fetch-blobs\.sh$|scripts/lint_specs\.py$|scripts/check-upstream-untouched\.sh$|jobs/postgres/spec$|config/blobs\.yml$)
+
+  # ─── Generic hygiene ────────────────────────────────────────────────
+  # Most of these apply repo-wide because they catch genuine bugs
+  # (private keys, merge conflicts, large files) regardless of who
+  # wrote the file.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        # Limit to our additions to avoid churn on upstream files.
+        files: ^(packages/pgvector-(15|16|17)/|docs/adr/|docs/deployment\.md$|AGENTS\.md$|CLAUDE\.md$|README\.md$|NOTICE$|SECURITY\.md$|CONTRIBUTING\.md$|CHANGELOG\.md$|\.pre-commit-config\.yaml$|\.markdownlint\.json$|\.yamllint\.yml$|\.secrets\.baseline$|\.gitignore$|\.github/workflows/ci\.yml$|\.github/ISSUE_TEMPLATE/|\.github/PULL_REQUEST_TEMPLATE\.md$|scripts/fetch-blobs\.sh$|scripts/lint_specs\.py$|scripts/check-upstream-untouched\.sh$)
+      - id: end-of-file-fixer
+        files: ^(packages/pgvector-(15|16|17)/|docs/adr/|docs/deployment\.md$|AGENTS\.md$|CLAUDE\.md$|README\.md$|NOTICE$|SECURITY\.md$|CONTRIBUTING\.md$|CHANGELOG\.md$|\.pre-commit-config\.yaml$|\.markdownlint\.json$|\.yamllint\.yml$|\.secrets\.baseline$|\.gitignore$|\.github/workflows/ci\.yml$|\.github/ISSUE_TEMPLATE/|\.github/PULL_REQUEST_TEMPLATE\.md$|scripts/fetch-blobs\.sh$|scripts/lint_specs\.py$|scripts/check-upstream-untouched\.sh$)
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: [--fix=lf]
+        files: ^(packages/pgvector-(15|16|17)/|docs/adr/|docs/deployment\.md$|AGENTS\.md$|CLAUDE\.md$|README\.md$|NOTICE$|SECURITY\.md$|CONTRIBUTING\.md$|CHANGELOG\.md$|\.pre-commit-config\.yaml$|\.markdownlint\.json$|\.yamllint\.yml$|\.secrets\.baseline$|\.gitignore$|\.github/workflows/ci\.yml$|\.github/ISSUE_TEMPLATE/|\.github/PULL_REQUEST_TEMPLATE\.md$|scripts/fetch-blobs\.sh$|scripts/lint_specs\.py$|scripts/check-upstream-untouched\.sh$)
+      - id: forbid-submodules
+
+  # ─── Shell ──────────────────────────────────────────────────────────
+  # Allowlist: lint only our additions. BOSH packaging scripts have no
+  # extension (`packages/*/packaging`) so we override types_or to match
+  # by path + force-treat-as-shell.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning, --external-sources, --shell=bash]
+        types_or: [shell, file]
+        files: ^(packages/pgvector-(15|16|17)/packaging$|scripts/fetch-blobs\.sh$|scripts/check-upstream-untouched\.sh$)
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.10.0-2
+    hooks:
+      - id: shfmt
+        args: [-i, "2", -ci, -bn, -w, -ln, bash]
+        types_or: [shell, file]
+        files: ^(packages/pgvector-(15|16|17)/packaging$|scripts/fetch-blobs\.sh$|scripts/check-upstream-untouched\.sh$)
+
+  # ─── YAML ──────────────────────────────────────────────────────────
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.37.0
+    hooks:
+      - id: yamllint
+        args: [-c, .yamllint.yml]
+        # Allowlist: lint only our additions. Upstream postgres-release
+        # files predate our style; issues there belong upstream.
+        files: ^(packages/pgvector-(15|16|17)/spec$|\.pre-commit-config\.yaml$|\.yamllint\.yml$|\.github/workflows/ci\.yml$)
+
+  # ─── Markdown ──────────────────────────────────────────────────────
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.42.0
+    hooks:
+      - id: markdownlint
+        args: [--config, .markdownlint.json]
+        # Lint our own additions only. The upstream README and
+        # docs/acceptance-tests.md inherit upstream's style; issues there
+        # belong upstream at cloudfoundry/postgres-release.
+        files: ^(docs/adr/|docs/deployment\.md$|AGENTS\.md$|SECURITY\.md$|CONTRIBUTING\.md$|CHANGELOG\.md$)
+
+  # ─── Local hooks ────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: bosh-spec-yaml
+        name: validate every packages/*/spec is well-formed YAML
+        entry: python3 scripts/lint_specs.py
+        language: system
+        files: ^packages/.+/spec$
+        pass_filenames: false
+
+      - id: no-modify-upstream
+        name: warn on modifications to upstream files
+        # Allow our additions; warn on anything else under jobs/ or src/.
+        entry: scripts/check-upstream-untouched.sh
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
