@@ -25,6 +25,9 @@ templates:
   hooks/postgres-post-start.sh.erb: bin/hooks/postgres-post-start.sh
   hooks/postgres-post-stop.sh.erb: bin/hooks/postgres-post-stop.sh
   used_postgresql_versions.yml: config/used_postgresql_versions.yml
+  # (bosh-pgvector-release fork) wires pgvector files into postgres-N's
+  # extension paths at job start. See issue #14.
+  install_pgvector_links.sh.erb: bin/install_pgvector_links.sh
 
 packages:
   - postgres-common

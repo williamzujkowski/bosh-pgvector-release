@@ -1,0 +1,81 @@
+#!/bin/bash
+# (bosh-pgvector-release fork) Wire pgvector files into the active
+# postgres-N package directory.
+#
+# WHY THIS EXISTS
+#   PostgreSQL looks for extension control files and SQL scripts under
+#   `<pg_prefix>/share/extension/` and for the shared library under
+#   `<pg_prefix>/lib/` (where `<pg_prefix>` comes from pg_config at
+#   compile time of the postgres-N package, so it's the literal
+#   `/var/vcap/packages/postgres-N/` path on the deployed VM).
+#
+#   We compile pgvector against postgres-N at build time, but the
+#   resulting files have to live in our own pgvector-N package blob
+#   (see packages/pgvector-15/packaging + issue #14). At runtime they
+#   need to appear under postgres-N's tree, so PostgreSQL finds them
+#   on its hard-coded extension search path.
+#
+#   Symlinks accomplish that without copying. They're idempotent and
+#   we re-apply them on every pre-start, so a BOSH redeploy or package
+#   re-sync simply re-creates them.
+#
+# WHY NOT extension_control_path / dynamic_library_path
+#   `extension_control_path` only exists from PostgreSQL 18. We ship
+#   15/16/17. `dynamic_library_path` would cover vector.so but there
+#   is no analogue for the control file on 15-17.
+
+set -euo pipefail
+
+JOB_DIR=/var/vcap/jobs/postgres
+source "${JOB_DIR}/bin/pgconfig.sh"
+
+# pgconfig.sh exports `current_version` (the major, e.g. "16") and
+# `PACKAGE_DIR` (/var/vcap/packages/postgres-N).
+PGVECTOR_DIR="/var/vcap/packages/pgvector-${current_version}"
+POSTGRES_DIR="${PACKAGE_DIR}"
+
+if [[ ! -d "${PGVECTOR_DIR}" ]]; then
+  echo "ERROR: ${PGVECTOR_DIR} is missing — pgvector-${current_version} package not delivered." >&2
+  exit 1
+fi
+if [[ ! -d "${POSTGRES_DIR}" ]]; then
+  echo "ERROR: ${POSTGRES_DIR} is missing — postgres-${current_version} package not delivered." >&2
+  exit 1
+fi
+
+# Required artifacts produced by the pgvector-N packaging script.
+required_files=(
+  "${PGVECTOR_DIR}/lib/vector.so"
+  "${PGVECTOR_DIR}/share/extension/vector.control"
+)
+for f in "${required_files[@]}"; do
+  if [[ ! -f "${f}" ]]; then
+    echo "ERROR: required pgvector artifact missing: ${f}" >&2
+    echo "       Did packages/pgvector-${current_version}/packaging install it correctly?" >&2
+    exit 1
+  fi
+done
+
+# Target directories under postgres-N. They already exist (postgres
+# created them at its own install), but mkdir -p is safe.
+mkdir -p "${POSTGRES_DIR}/lib" "${POSTGRES_DIR}/share/extension"
+
+# Link the shared library.
+ln -sfn "${PGVECTOR_DIR}/lib/vector.so" "${POSTGRES_DIR}/lib/vector.so"
+
+# Link the control file and every SQL migration. Use a glob so future
+# pgvector versions that add or rename scripts continue to work without
+# code changes here.
+shopt -s nullglob
+ext_files=("${PGVECTOR_DIR}/share/extension/"vector*)
+if [[ ${#ext_files[@]} -eq 0 ]]; then
+  echo "ERROR: no vector.* files in ${PGVECTOR_DIR}/share/extension/" >&2
+  exit 1
+fi
+for src in "${ext_files[@]}"; do
+  ln -sfn "${src}" "${POSTGRES_DIR}/share/extension/$(basename "${src}")"
+done
+
+echo "pgvector links installed for postgres-${current_version}:"
+ls -l "${POSTGRES_DIR}/lib/vector.so" \
+      "${POSTGRES_DIR}/share/extension/"vector*

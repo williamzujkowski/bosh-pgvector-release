@@ -1,6 +1,7 @@
 #!/bin/bash
 # Compile pgvector against the bundled postgres-17.
-# See packages/pgvector-15/packaging for the full design notes.
+# See packages/pgvector-15/packaging for the full design notes
+# (DESTDIR-based install, why we don't write into postgres-N's tree).
 
 set -euxo pipefail
 
@@ -10,6 +11,7 @@ PG_CONFIG="/var/vcap/packages/postgres-${POSTGRES_VERSION}/bin/pg_config"
 main() {
   extract_archive
   compile
+  stage_install_artifacts
   record_manifest
 }
 
@@ -40,17 +42,55 @@ compile() {
 
   pushd "${src_dirs[0]}" >/dev/null
   make -j"$(nproc)" PG_CONFIG="${PG_CONFIG}" OPTFLAGS=""
-  make install PG_CONFIG="${PG_CONFIG}"
+  make install DESTDIR="${STAGING_DIR}" PG_CONFIG="${PG_CONFIG}"
   popd >/dev/null
 }
 
+stage_install_artifacts() {
+  local pkglibdir sharedir
+  pkglibdir="$("${PG_CONFIG}" --pkglibdir)"
+  sharedir="$("${PG_CONFIG}" --sharedir)"
+
+  local staged_lib="${STAGING_DIR}${pkglibdir}/vector.so"
+  local staged_ext_dir="${STAGING_DIR}${sharedir}/extension"
+  if [[ ! -f "${staged_lib}" ]]; then
+    echo "ERROR: expected staged vector.so at ${staged_lib}, not found" >&2
+    return 1
+  fi
+  if [[ ! -d "${staged_ext_dir}" ]]; then
+    echo "ERROR: expected staged extension dir at ${staged_ext_dir}, not found" >&2
+    return 1
+  fi
+
+  mkdir -p "${BOSH_INSTALL_TARGET}/lib" "${BOSH_INSTALL_TARGET}/share/extension"
+
+  mv "${staged_lib}" "${BOSH_INSTALL_TARGET}/lib/vector.so"
+
+  shopt -s nullglob
+  local ext_files=("${staged_ext_dir}/"vector*)
+  if [[ ${#ext_files[@]} -eq 0 ]]; then
+    echo "ERROR: no vector.* files staged under ${staged_ext_dir}" >&2
+    return 1
+  fi
+  mv "${ext_files[@]}" "${BOSH_INSTALL_TARGET}/share/extension/"
+
+  test -f "${BOSH_INSTALL_TARGET}/lib/vector.so"
+  test -f "${BOSH_INSTALL_TARGET}/share/extension/vector.control"
+  ls "${BOSH_INSTALL_TARGET}/share/extension/"vector--*.sql >/dev/null
+
+  rm -rf "${STAGING_DIR}"
+}
+
 record_manifest() {
-  mkdir -p "${BOSH_INSTALL_TARGET}"
   cat >"${BOSH_INSTALL_TARGET}/pgvector.env" <<EOF
 PGVECTOR_INSTALLED_FOR_POSTGRES=${POSTGRES_VERSION}
-PGVECTOR_INSTALL_TARGET=/var/vcap/packages/postgres-${POSTGRES_VERSION}
+PGVECTOR_INSTALL_TARGET=/var/vcap/packages/pgvector-${POSTGRES_VERSION}
 PGVECTOR_PG_CONFIG=${PG_CONFIG}
 EOF
 }
+
+STAGING_DIR="${BOSH_INSTALL_TARGET}/.staging"
+rm -rf "${STAGING_DIR}"
+mkdir -p "${STAGING_DIR}"
 
 main
