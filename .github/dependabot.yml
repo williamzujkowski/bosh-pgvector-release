@@ -1,0 +1,16 @@
+---
+# Keep SHA-pinned GitHub Actions current. Pinning to commit SHAs (instead
+# of floating major tags) is the supply-chain-correct choice for workflows
+# that hold `contents: write` permission — but it requires Dependabot (or
+# Renovate) to keep them from rotting into stale, unpatched pins.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore(deps)
+    open-pull-requests-limit: 5
