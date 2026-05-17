@@ -30,6 +30,12 @@ properties:
           -c "CREATE EXTENSION IF NOT EXISTS vector"
 ```
 
+> **Note on `${PORT}`.** The postgres job exports `PORT` into the hook
+> script's environment from the `databases.port` property (default
+> `5432`). You don't need a `${PORT:-5432}` fallback here; if `PORT` is
+> ever unset that's an upstream postgres-release bug worth investigating
+> rather than silently papering over.
+
 ### Multiple databases
 
 ```yaml
