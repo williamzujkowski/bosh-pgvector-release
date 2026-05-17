@@ -47,7 +47,7 @@ up. The symlink step runs every pre-start, so it's idempotent and
 survives BOSH redeploys.
 
 All three pgvector packages share the same source tarball
-(`pgvector-0.8.0.tar.gz`), declared via the `files: pgvector/pgvector-*.tar.gz`
+(`pgvector-0.8.2.tar.gz`), declared via the `files: pgvector/pgvector-*.tar.gz`
 glob in each package's spec.
 
 ## Why not one pgvector package serving all three Postgres majors
