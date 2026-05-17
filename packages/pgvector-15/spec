@@ -4,5 +4,13 @@ name: pgvector-15
 dependencies:
   - postgres-15
 
+# The `files:` entry below is a glob, not a pinned filename. This is a
+# deliberate trade-off: a glob keeps pgvector version bumps cheap (bump
+# config/blobs.yml and scripts/fetch-blobs.sh; the three pgvector-N
+# specs don't need to be touched). The risk a glob normally invites —
+# silently building against the wrong tarball if multiple match — is
+# closed in the packaging script, which asserts exactly one match and
+# fails loudly otherwise (see packages/pgvector-15/packaging,
+# `extract_archive`). Reviewed in issue #2 item #28.
 files:
   - pgvector/pgvector-*.tar.gz

@@ -43,6 +43,20 @@ if [[ ! -d "${POSTGRES_DIR}" ]]; then
   exit 1
 fi
 
+# Sanity check: the pgvector-N packaging script records the postgres
+# major version it was compiled against in pgvector.env. Confirm it
+# matches the active postgres major. A mismatch would mean the spec
+# (packages/pgvector-N/spec) or the delivered blob is wrong — fail
+# loudly here rather than wait for a runtime extension-load error.
+if [[ -f "${PGVECTOR_DIR}/pgvector.env" ]]; then
+  # shellcheck disable=SC1091
+  . "${PGVECTOR_DIR}/pgvector.env"
+  if [[ "${PGVECTOR_INSTALLED_FOR_POSTGRES:-}" != "${current_version}" ]]; then
+    echo "ERROR: pgvector-${current_version} package was compiled for postgres-${PGVECTOR_INSTALLED_FOR_POSTGRES:-<unset>}; spec/blob mismatch" >&2
+    exit 1
+  fi
+fi
+
 # Required artifacts produced by the pgvector-N packaging script.
 required_files=(
   "${PGVECTOR_DIR}/lib/vector.so"

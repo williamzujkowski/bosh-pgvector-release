@@ -61,6 +61,8 @@ cd bosh-pgvector-release
 ./scripts/fetch-blobs.sh
 
 # Build a development tarball.
+# (The --force flag allows building from an uncommitted tree; CI and
+# release builds use a clean checkout and don't need it.)
 bosh create-release --force --name=bosh-pgvector-release --version=0.1.0-dev \
   --tarball=/tmp/bosh-pgvector-release-0.1.0-dev.tgz
 

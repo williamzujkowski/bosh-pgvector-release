@@ -7,3 +7,10 @@ postgresql:
       minor_version: "15.18"
     17:
       minor_version: "17.10"
+
+# bosh-pgvector-release fork annotation (comment only, no behavior change):
+# Upstream postgres-release tracks these majors/minors via its release
+# cycle. The bosh-pgvector-release fork's currently-supported postgres
+# majors are recorded in README.md's versioning table (top-level), and
+# the fork+rebase policy that keeps this file in sync with upstream is
+# documented in docs/adr/0001-fork-and-rebase-policy.md.
