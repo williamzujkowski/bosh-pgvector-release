@@ -49,6 +49,13 @@ jobs:
           path: blobs/
           key: blobs-${{ hashFiles('scripts/fetch-blobs.sh', 'config/blobs.yml') }}
 
+      - name: Assert pgvector-{15,16,17}/packaging parity
+        # Cheap structural check: the three packaging scripts must
+        # differ only by POSTGRES_VERSION=. Catches the common bug of
+        # a fix landing in one script and missing the other two on a
+        # postgres-major bump. See issue #2 (item #20).
+        run: ./scripts/check-pgvector-packaging-parity.sh
+
       - name: Fetch source blobs (if not cached)
         run: ./scripts/fetch-blobs.sh
 
