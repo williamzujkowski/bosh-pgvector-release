@@ -20,27 +20,33 @@ repos:
         # Scan only our additions. Upstream files contain blob SHA-256
         # hashes (false positives) and test fixtures with the literal
         # word "password" (test code). Out of scope for our lint.
-        files: ^(packages/pgvector-(15|16|17)/|docs/adr/|docs/deployment\.md$|AGENTS\.md$|CLAUDE\.md$|README\.md$|NOTICE$|SECURITY\.md$|CONTRIBUTING\.md$|CHANGELOG\.md$|\.pre-commit-config\.yaml$|\.markdownlint\.json$|\.yamllint\.yml$|\.gitignore$|\.github/workflows/ci\.yml$|\.github/ISSUE_TEMPLATE/|\.github/PULL_REQUEST_TEMPLATE\.md$|scripts/fetch-blobs\.sh$|scripts/lint_specs\.py$|scripts/check-upstream-untouched\.sh$|jobs/postgres/spec$|config/blobs\.yml$)
+        # Anchor `our-additions-secrets` covers fork files plus the two
+        # upstream-touchpoints we patch (jobs/postgres/spec,
+        # config/blobs.yml); excludes .secrets.baseline (which legitimately
+        # contains hashes).
+        files: &our-additions-secrets "^(packages/pgvector-(15|16|17)/|docs/adr/|docs/deployment\\.md$|AGENTS\\.md$|CLAUDE\\.md$|README\\.md$|NOTICE$|SECURITY\\.md$|CONTRIBUTING\\.md$|CHANGELOG\\.md$|\\.pre-commit-config\\.yaml$|\\.markdownlint\\.json$|\\.yamllint\\.yml$|\\.gitignore$|\\.github/workflows/ci\\.yml$|\\.github/ISSUE_TEMPLATE/|\\.github/PULL_REQUEST_TEMPLATE\\.md$|scripts/fetch-blobs\\.sh$|scripts/lint_specs\\.py$|scripts/check-upstream-untouched\\.sh$|jobs/postgres/spec$|config/blobs\\.yml$)"
 
   # ─── Generic hygiene ────────────────────────────────────────────────
   # Most of these apply repo-wide because they catch genuine bugs
   # (private keys, merge conflicts, large files) regardless of who
   # wrote the file.
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
-        # Limit to our additions to avoid churn on upstream files.
-        files: ^(packages/pgvector-(15|16|17)/|docs/adr/|docs/deployment\.md$|AGENTS\.md$|CLAUDE\.md$|README\.md$|NOTICE$|SECURITY\.md$|CONTRIBUTING\.md$|CHANGELOG\.md$|\.pre-commit-config\.yaml$|\.markdownlint\.json$|\.yamllint\.yml$|\.secrets\.baseline$|\.gitignore$|\.github/workflows/ci\.yml$|\.github/ISSUE_TEMPLATE/|\.github/PULL_REQUEST_TEMPLATE\.md$|scripts/fetch-blobs\.sh$|scripts/lint_specs\.py$|scripts/check-upstream-untouched\.sh$)
+        # Limit to our additions to avoid churn on upstream files. The
+        # `our-additions` anchor is reused by end-of-file-fixer and
+        # mixed-line-ending below.
+        files: &our-additions "^(packages/pgvector-(15|16|17)/|docs/adr/|docs/deployment\\.md$|AGENTS\\.md$|CLAUDE\\.md$|README\\.md$|NOTICE$|SECURITY\\.md$|CONTRIBUTING\\.md$|CHANGELOG\\.md$|\\.pre-commit-config\\.yaml$|\\.markdownlint\\.json$|\\.yamllint\\.yml$|\\.secrets\\.baseline$|\\.gitignore$|\\.github/workflows/ci\\.yml$|\\.github/ISSUE_TEMPLATE/|\\.github/PULL_REQUEST_TEMPLATE\\.md$|scripts/fetch-blobs\\.sh$|scripts/lint_specs\\.py$|scripts/check-upstream-untouched\\.sh$)"
       - id: end-of-file-fixer
-        files: ^(packages/pgvector-(15|16|17)/|docs/adr/|docs/deployment\.md$|AGENTS\.md$|CLAUDE\.md$|README\.md$|NOTICE$|SECURITY\.md$|CONTRIBUTING\.md$|CHANGELOG\.md$|\.pre-commit-config\.yaml$|\.markdownlint\.json$|\.yamllint\.yml$|\.secrets\.baseline$|\.gitignore$|\.github/workflows/ci\.yml$|\.github/ISSUE_TEMPLATE/|\.github/PULL_REQUEST_TEMPLATE\.md$|scripts/fetch-blobs\.sh$|scripts/lint_specs\.py$|scripts/check-upstream-untouched\.sh$)
+        files: *our-additions
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=500]
       - id: detect-private-key
       - id: mixed-line-ending
         args: [--fix=lf]
-        files: ^(packages/pgvector-(15|16|17)/|docs/adr/|docs/deployment\.md$|AGENTS\.md$|CLAUDE\.md$|README\.md$|NOTICE$|SECURITY\.md$|CONTRIBUTING\.md$|CHANGELOG\.md$|\.pre-commit-config\.yaml$|\.markdownlint\.json$|\.yamllint\.yml$|\.secrets\.baseline$|\.gitignore$|\.github/workflows/ci\.yml$|\.github/ISSUE_TEMPLATE/|\.github/PULL_REQUEST_TEMPLATE\.md$|scripts/fetch-blobs\.sh$|scripts/lint_specs\.py$|scripts/check-upstream-untouched\.sh$)
+        files: *our-additions
       - id: forbid-submodules
 
   # ─── Shell ──────────────────────────────────────────────────────────
