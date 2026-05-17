@@ -59,7 +59,7 @@ repos:
       - id: shellcheck
         args: [--severity=warning, --external-sources, --shell=bash]
         types_or: [shell, file]
-        files: ^(packages/pgvector-(15|16|17)/packaging$|scripts/fetch-blobs\.sh$|scripts/check-upstream-untouched\.sh$)
+        files: ^(packages/pgvector-(15|16|17)/packaging$|scripts/fetch-blobs\.sh$|scripts/check-upstream-untouched\.sh$|scripts/check-pgvector-packaging-parity\.sh$)
 
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: v3.13.1-1
@@ -67,7 +67,7 @@ repos:
       - id: shfmt
         args: [-i, "2", -ci, -bn, -w, -ln, bash]
         types_or: [shell, file]
-        files: ^(packages/pgvector-(15|16|17)/packaging$|scripts/fetch-blobs\.sh$|scripts/check-upstream-untouched\.sh$)
+        files: ^(packages/pgvector-(15|16|17)/packaging$|scripts/fetch-blobs\.sh$|scripts/check-upstream-untouched\.sh$|scripts/check-pgvector-packaging-parity\.sh$)
 
   # ─── YAML ──────────────────────────────────────────────────────────
   - repo: https://github.com/adrienverge/yamllint
@@ -107,3 +107,10 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-commit]
+
+      - id: pgvector-packaging-parity
+        name: pgvector-{15,16,17}/packaging differ only by POSTGRES_VERSION=
+        entry: scripts/check-pgvector-packaging-parity.sh
+        language: system
+        files: ^packages/pgvector-(15|16|17)/packaging$
+        pass_filenames: false
