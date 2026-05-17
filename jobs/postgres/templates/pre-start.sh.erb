@@ -66,3 +66,10 @@ function main() {
 main
 upgrade
 
+# (bosh-pgvector-release fork) Install pgvector links into the active
+# postgres-N package tree. Must run after pgconfig.sh has been sourced
+# (it was sourced near the top of this script) and before postgres
+# starts. See jobs/postgres/templates/install_pgvector_links.sh.erb
+# and issue #14.
+"${JOB_DIR}/bin/install_pgvector_links.sh"
+

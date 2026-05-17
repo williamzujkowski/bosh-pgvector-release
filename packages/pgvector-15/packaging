@@ -1,12 +1,15 @@
 #!/bin/bash
 # Compile pgvector against the bundled postgres-15.
 #
-# pgvector uses PGXS, so PG_CONFIG fully determines install location.
-# We point it at the postgres-15 package's pg_config; `make install`
-# writes the .so + control file + SQL into that package's lib/share.
-#
-# Per-Postgres-major package mirrors how upstream postgres-release
-# ships postgres-15/16/17 as separate packages. See ADR-0002.
+# pgvector uses PGXS: PG_CONFIG determines the prefix paths Makefile
+# writes into. We point it at postgres-15's pg_config so the right
+# header/lib paths are used at COMPILE time, then redirect file
+# placement at INSTALL time using DESTDIR so all installed files land
+# under this package's BOSH_INSTALL_TARGET — and therefore inside this
+# package's blob. See ADR-0002 + issue #14 for why the old
+# "make install PG_CONFIG=..." into postgres-N's tree silently dropped
+# every file (writes went into the compile VM's view of postgres-N,
+# which is not captured into any blob).
 #
 # Hardening per code-review #19: -o pipefail + assert exactly one
 # matching tarball before pushd (a version bump that leaves the old
@@ -20,6 +23,7 @@ PG_CONFIG="/var/vcap/packages/postgres-${POSTGRES_VERSION}/bin/pg_config"
 main() {
   extract_archive
   compile
+  stage_install_artifacts
   record_manifest
 }
 
@@ -57,19 +61,66 @@ compile() {
   # VM, and -march=native produces .so files that crash with SIGILL
   # on a different microarchitecture.
   make -j"$(nproc)" PG_CONFIG="${PG_CONFIG}" OPTFLAGS=""
-  make install PG_CONFIG="${PG_CONFIG}"
+  # DESTDIR forces install paths to be prefixed by ${STAGING_DIR};
+  # PGXS still computes pkglibdir / sharedir from PG_CONFIG, so files
+  # land at ${STAGING_DIR}/var/vcap/packages/postgres-N/{lib,share/extension}/.
+  # We move them to BOSH_INSTALL_TARGET below.
+  make install DESTDIR="${STAGING_DIR}" PG_CONFIG="${PG_CONFIG}"
   popd >/dev/null
 }
 
+stage_install_artifacts() {
+  # Query pg_config rather than hard-coding /var/vcap/packages/postgres-N
+  # so we follow whatever prefix postgres-N was configured with. On the
+  # BOSH compile VM this is /var/vcap/packages/postgres-N; outside it
+  # (e.g. a docker smoke test against a system PG) it might be /usr.
+  local pkglibdir sharedir
+  pkglibdir="$("${PG_CONFIG}" --pkglibdir)"
+  sharedir="$("${PG_CONFIG}" --sharedir)"
+
+  local staged_lib="${STAGING_DIR}${pkglibdir}/vector.so"
+  local staged_ext_dir="${STAGING_DIR}${sharedir}/extension"
+  if [[ ! -f "${staged_lib}" ]]; then
+    echo "ERROR: expected staged vector.so at ${staged_lib}, not found" >&2
+    return 1
+  fi
+  if [[ ! -d "${staged_ext_dir}" ]]; then
+    echo "ERROR: expected staged extension dir at ${staged_ext_dir}, not found" >&2
+    return 1
+  fi
+
+  mkdir -p "${BOSH_INSTALL_TARGET}/lib" "${BOSH_INSTALL_TARGET}/share/extension"
+
+  mv "${staged_lib}" "${BOSH_INSTALL_TARGET}/lib/vector.so"
+
+  shopt -s nullglob
+  local ext_files=("${staged_ext_dir}/"vector*)
+  if [[ ${#ext_files[@]} -eq 0 ]]; then
+    echo "ERROR: no vector.* files staged under ${staged_ext_dir}" >&2
+    return 1
+  fi
+  mv "${ext_files[@]}" "${BOSH_INSTALL_TARGET}/share/extension/"
+
+  test -f "${BOSH_INSTALL_TARGET}/lib/vector.so"
+  test -f "${BOSH_INSTALL_TARGET}/share/extension/vector.control"
+  ls "${BOSH_INSTALL_TARGET}/share/extension/"vector--*.sql >/dev/null
+
+  rm -rf "${STAGING_DIR}"
+}
+
 record_manifest() {
-  # Tracks what we built for which Postgres major. Read by the
-  # post-start verification hook (added in a follow-up).
-  mkdir -p "${BOSH_INSTALL_TARGET}"
+  # Tracks what we built for which Postgres major. Read at runtime by
+  # jobs/postgres/templates/install_pgvector_links.sh.erb to pick the
+  # right pgvector-N package for the active postgres major.
   cat >"${BOSH_INSTALL_TARGET}/pgvector.env" <<EOF
 PGVECTOR_INSTALLED_FOR_POSTGRES=${POSTGRES_VERSION}
-PGVECTOR_INSTALL_TARGET=/var/vcap/packages/postgres-${POSTGRES_VERSION}
+PGVECTOR_INSTALL_TARGET=/var/vcap/packages/pgvector-${POSTGRES_VERSION}
 PGVECTOR_PG_CONFIG=${PG_CONFIG}
 EOF
 }
+
+STAGING_DIR="${BOSH_INSTALL_TARGET}/.staging"
+rm -rf "${STAGING_DIR}"
+mkdir -p "${STAGING_DIR}"
 
 main
