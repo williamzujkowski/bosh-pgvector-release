@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Warn (not fail) when staged changes touch upstream files. The thin-fork
-# policy in ADR-0001 says modifications to upstream should be rare and
-# justified; this hook surfaces them in the pre-commit run so reviewers
-# can sanity-check.
+# Warn (locally) / fail (in CI) when staged changes touch upstream files.
+# The thin-fork policy in ADR-0001 says modifications to upstream should be
+# rare and justified; this hook surfaces them in the pre-commit run so
+# reviewers can sanity-check. In CI (CI=true), we promote the warning to
+# a hard failure so the PR author has to justify the divergence in the PR
+# description before the check can pass (see item #24 of issue #2).
 set -euo pipefail
 
 # Get staged file paths. Falls back to listing all changed files if no
@@ -42,10 +44,22 @@ if ((flagged == 1)); then
   echo "" >&2
   echo "If these changes are intentional, add a note to the PR description" >&2
   echo "explaining why they can't be sent upstream first. To bypass this" >&2
-  echo "check for a single commit, use:" >&2
+  echo "check for a single commit locally, use:" >&2
   echo "    SKIP=no-modify-upstream git commit ..." >&2
   echo "" >&2
+
+  # In CI (GitHub Actions sets CI=true), promote the warning to a hard
+  # failure. The PR author must justify the upstream divergence in the PR
+  # description; the reviewer reads it before deciding whether to merge.
+  # Local devs still get exit 0 so a midstream commit isn't blocked.
+  if [[ -n "${CI:-}" ]]; then
+    echo "CI=${CI}: failing because upstream files were modified without" >&2
+    echo "going through the upstream postgres-release project. If this is" >&2
+    echo "a deliberate, pgvector-specific change, document the rationale" >&2
+    echo "in the PR description and a reviewer can override by merging." >&2
+    exit 1
+  fi
 fi
 
-# This hook *warns* but does not fail; we don't block commits.
+# Local mode: hook *warns* but does not fail; we don't block commits.
 exit 0

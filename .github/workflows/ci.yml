@@ -95,7 +95,48 @@ jobs:
               exit 1
             fi
           done
-          echo "OK — tarball contains all required entries"
+          echo "OK — outer tarball contains all required entries"
+
+      - name: Verify pgvector inner packages bundle source + packaging
+        run: |
+          # The outer release tarball ships each package as packages/<name>.tgz.
+          # Compilation happens on the BOSH director's compile VM at deploy
+          # time, not in CI, so we can't prove vector.so was built here. We
+          # CAN prove the inputs that the compile VM needs are present: the
+          # `packaging` bash script and the pgvector source tarball matching
+          # the version pinned in scripts/fetch-blobs.sh. Item #25 of #2.
+          set -euo pipefail
+          PGVECTOR_VERSION="$(awk -F'[":}-]+' '/^PGVECTOR_VERSION=/ { print $3; exit }' scripts/fetch-blobs.sh)"
+          echo "Expecting pgvector source: pgvector/pgvector-${PGVECTOR_VERSION}.tar.gz"
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "${workdir}"' EXIT
+          # Extract just the three pgvector inner package tarballs from
+          # the outer release tarball.
+          tar -xzf /tmp/bosh-pgvector-release-ci.tgz -C "${workdir}" \
+            packages/pgvector-15.tgz \
+            packages/pgvector-16.tgz \
+            packages/pgvector-17.tgz
+          failed=0
+          for pg in 15 16 17; do
+            inner="${workdir}/packages/pgvector-${pg}.tgz"
+            echo "--- pgvector-${pg}.tgz ---"
+            entries="$(tar -tzf "${inner}" | sort)"
+            echo "${entries}"
+            if ! grep -qx './packaging' <<<"${entries}" \
+              && ! grep -qx 'packaging' <<<"${entries}"; then
+              echo "ERROR: pgvector-${pg}.tgz missing packaging script"
+              failed=1
+            fi
+            if ! grep -Eq "(^|/)pgvector/pgvector-${PGVECTOR_VERSION}\.tar\.gz$" <<<"${entries}"; then
+              echo "ERROR: pgvector-${pg}.tgz missing pgvector/pgvector-${PGVECTOR_VERSION}.tar.gz"
+              failed=1
+            fi
+          done
+          if ((failed == 1)); then
+            echo "ERROR: one or more pgvector packages are missing required inputs"
+            exit 1
+          fi
+          echo "OK — every pgvector-N.tgz bundles packaging + pgvector-${PGVECTOR_VERSION}.tar.gz"
 
       - name: Upload release artifact (for inspection)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
