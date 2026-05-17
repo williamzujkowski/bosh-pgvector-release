@@ -1,3 +1,4 @@
+---
 name: Validate Concourse Pipeline
 
 on:
@@ -10,20 +11,34 @@ on:
     paths:
       - ci/pipeline.yml
 
+permissions:
+  contents: read
+
+env:
+  FLY_VERSION: '8.2.1'
+  # SHA-256 of fly-8.2.1-linux-amd64.tgz from the official Concourse
+  # GitHub release. Keep in sync with FLY_VERSION; verify against the
+  # release page before bumping (Concourse ships only a SHA-1 sidecar,
+  # so this hash is computed locally at pin time).
+  FLY_SHA256: '587312235035326db285e54d7293080541168f42f95be45d199884e36d41c3e3'  # pragma: allowlist secret
+
 jobs:
   validate-ci-cd-pipeline:
     name: Concourse Pipeline validation
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
 
-      - name: Download fly CLI
+      - name: Install fly CLI
         run: |
-          curl -sSL \
-            "https://bosh.ci.cloudfoundry.org/api/v1/cli?arch=amd64&platform=linux" \
-            -o fly
-          chmod +x fly
-          sudo mv fly /usr/local/bin/fly
+          curl -fsSL -o /tmp/fly.tgz \
+            "https://github.com/concourse/concourse/releases/download/v${FLY_VERSION}/fly-${FLY_VERSION}-linux-amd64.tgz"
+          echo "${FLY_SHA256}  /tmp/fly.tgz" | sha256sum -c -
+          tar -xzf /tmp/fly.tgz -C /tmp
+          sudo install -m 0755 /tmp/fly /usr/local/bin/fly
           fly --version
 
       - name: Validate pipeline definition
@@ -31,4 +46,3 @@ jobs:
           fly validate-pipeline \
             --config ci/pipeline.yml \
             --strict
-
