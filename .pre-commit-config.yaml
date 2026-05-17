@@ -8,7 +8,7 @@
 repos:
   # ─── Secrets ────────────────────────────────────────────────────────
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.24.2
+    rev: v8.30.1
     hooks:
       - id: gitleaks
 
@@ -48,7 +48,7 @@ repos:
   # extension (`packages/*/packaging`) so we override types_or to match
   # by path + force-treat-as-shell.
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: v0.10.0.1
+    rev: v0.11.0.1
     hooks:
       - id: shellcheck
         args: [--severity=warning, --external-sources, --shell=bash]
@@ -56,7 +56,7 @@ repos:
         files: ^(packages/pgvector-(15|16|17)/packaging$|scripts/fetch-blobs\.sh$|scripts/check-upstream-untouched\.sh$)
 
   - repo: https://github.com/scop/pre-commit-shfmt
-    rev: v3.10.0-2
+    rev: v3.13.1-1
     hooks:
       - id: shfmt
         args: [-i, "2", -ci, -bn, -w, -ln, bash]
@@ -65,7 +65,7 @@ repos:
 
   # ─── YAML ──────────────────────────────────────────────────────────
   - repo: https://github.com/adrienverge/yamllint
-    rev: v1.37.0
+    rev: v1.38.0
     hooks:
       - id: yamllint
         args: [-c, .yamllint.yml]
@@ -75,7 +75,7 @@ repos:
 
   # ─── Markdown ──────────────────────────────────────────────────────
   - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.42.0
+    rev: v0.48.0
     hooks:
       - id: markdownlint
         args: [--config, .markdownlint.json]

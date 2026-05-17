@@ -74,7 +74,7 @@ For deployment instructions, see the [upstream README](#upstream-postgres-releas
 
 | pgvector | postgres-15 | postgres-16 | postgres-17 | postgres-release base |
 | -------- | ----------- | ----------- | ----------- | --------------------- |
-| 0.8.0    | 15.18       | 16.14       | 17.10       | v54.0.1 (rebased: 0998b4e on 2026-05-16) |
+| 0.8.2    | 15.18       | 16.14       | 17.10       | v54.0.1 (rebased: 0998b4e on 2026-05-16) |
 
 We track upstream postgres-release closely (one rebase per upstream release) and pin to whichever pgvector version is current at rebase time. See [`docs/adr/0001-fork-and-rebase-policy.md`](./docs/adr/0001-fork-and-rebase-policy.md) for the policy.
 

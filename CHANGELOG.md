@@ -13,7 +13,7 @@ changes only.
 
 - Initial fork from `cloudfoundry/postgres-release` v54.0.1 (upstream commit `0998b4e`, 2026-05-16).
 - `packages/pgvector-15`, `packages/pgvector-16`, `packages/pgvector-17` — compile pgvector against the matching bundled PostgreSQL major.
-- pgvector 0.8.0 source vendored via `config/blobs.yml` (downloaded by `scripts/fetch-blobs.sh`).
+- pgvector 0.8.2 source vendored via `config/blobs.yml` (downloaded by `scripts/fetch-blobs.sh`).
 - `jobs/postgres/spec` patched to include the pgvector packages in the postgres job.
 - Fork-specific README prepend documenting the addition.
 - `NOTICE` updated for derivative-work attribution + bundled software.

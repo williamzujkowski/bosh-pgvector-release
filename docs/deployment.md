@@ -65,7 +65,7 @@ sudo -iu vcap
                             List of installed extensions
   Name  | Version | Schema |                     Description
 --------+---------+--------+------------------------------------------------------
- vector | 0.8.0   | public | vector data type and ivfflat and hnsw access methods
+ vector | 0.8.2   | public | vector data type and ivfflat and hnsw access methods
 ```
 
 If the `\dx vector` row is missing, the extension wasn't installed on

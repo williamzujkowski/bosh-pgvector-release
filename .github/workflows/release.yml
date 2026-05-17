@@ -105,8 +105,10 @@ jobs:
 
       - name: Register pgvector blob with bosh
         run: |
-          if ! grep -q "^pgvector/pgvector-0.8.0.tar.gz:" config/blobs.yml; then
-            bosh add-blob blobs/pgvector/pgvector-0.8.0.tar.gz pgvector/pgvector-0.8.0.tar.gz
+          PGVECTOR_VERSION="$(awk -F'[":}-]+' '/^PGVECTOR_VERSION=/ { print $3; exit }' scripts/fetch-blobs.sh)"
+          BLOB_PATH="pgvector/pgvector-${PGVECTOR_VERSION}.tar.gz"
+          if ! grep -q "^${BLOB_PATH}:" config/blobs.yml; then
+            bosh add-blob "blobs/${BLOB_PATH}" "${BLOB_PATH}"
           fi
 
       - name: bosh create-release
