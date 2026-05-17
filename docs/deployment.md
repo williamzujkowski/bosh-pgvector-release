@@ -107,3 +107,75 @@ deploys. Don't compound moving parts.
 - **Upgrades.** Major Postgres upgrades (15→16) require the same care
   as any pgvector upgrade: dump/restore or `pg_upgrade` with the
   pgvector extension version matching on both sides.
+
+## Consuming via a service broker
+
+The `databases.hooks.post_start` pattern above provisions databases at
+deploy time. For CF apps that want self-service (`cf create-service ...`),
+deploy a service broker in front of the postgres VM. This release does
+not bundle one — use the broker your foundation already runs, or pick up
+[`cf-local-service-broker`](https://github.com/williamzujkowski/cf-local-service-broker),
+a small OSBAPI v2 broker (Go binary, deployable as a `cf push` app) that
+already ships a `postgresql-local` service offering with a `pgvector`
+plan that runs `CREATE EXTENSION vector` on each provisioned database.
+
+### Operator flow
+
+```bash
+# 1. Deploy bosh-pgvector-release as a standalone BOSH deployment.
+#    Use the manifest pattern in the sections above (single 'admin'
+#    role suffices; the broker creates per-binding roles itself).
+bosh -d pgvector deploy manifest.yml
+
+# 2. cf push the broker binary (built from cf-local-service-broker),
+#    pointing PG_HOST / PG_PORT / PG_ADMIN_USER / PG_ADMIN_PASSWORD at
+#    the postgres VM.
+cf push postgres-broker -b binary_buildpack -c './postgres-broker' -m 64M
+cf set-env postgres-broker BROKER_USERNAME admin
+cf set-env postgres-broker BROKER_PASSWORD "$(openssl rand -hex 16)"
+cf set-env postgres-broker PG_HOST       10.0.x.y
+cf set-env postgres-broker PG_PORT       5524
+cf set-env postgres-broker PG_ADMIN_USER vcap
+cf set-env postgres-broker PG_ADMIN_PASSWORD "$(credhub get -n /pgvector/admin_password -j | jq -r .value)"
+cf restage postgres-broker
+
+# 3. Register the broker with CF and enable the pgvector plan.
+cf create-service-broker postgres-broker admin "${BROKER_PASSWORD}" \
+  "https://postgres-broker.${CF_APPS_DOMAIN}"
+cf enable-service-access postgresql-local -p pgvector
+
+# 4. Apps now self-serve.
+cf create-service postgresql-local pgvector my-vector-db
+cf bind-service my-app my-vector-db
+cf restage my-app
+```
+
+### What the binding gives the app
+
+The broker exposes credentials via `VCAP_SERVICES` in the standard
+shape:
+
+```json
+{
+  "host":     "10.0.x.y",
+  "port":     "5524",
+  "database": "cf_<instance_id>",
+  "username": "cf_<binding_id>",
+  "password": "<generated>",
+  "uri":      "postgres://cf_<binding_id>:<password>@10.0.x.y:5524/cf_<instance_id>"
+}
+```
+
+The vector extension is already installed in the database (the broker
+runs `CREATE EXTENSION vector` on provision), so apps can immediately
+`CREATE TABLE items (id bigint, embedding vector(1536))` without
+needing extra privileges.
+
+### When to use which approach
+
+| Need                                          | Use                                                                 |
+| --------------------------------------------- | ------------------------------------------------------------------- |
+| Self-service for many CF apps                 | Service broker                                                      |
+| One known set of DBs, fixed at deploy time    | `databases.hooks.post_start` (above)                                |
+| External (non-CF) clients connecting directly | `databases` + roles in the manifest; no broker needed               |
+| A mix                                         | Both. Declare known DBs in the manifest *and* run a broker for the rest — they don't conflict. |
